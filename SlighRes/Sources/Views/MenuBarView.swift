@@ -2,37 +2,56 @@
 //  MenuBarView.swift
 //  SlighRes
 //
-//  Root view rendered inside the MenuBarExtra popover / menu.
+//  Root view rendered inside the MenuBarExtra popover / window.
+//  Displays per-display resolution sections with optional HiDPI filtering,
+//  scrollable overflow, and quick access to Preferences and Quit.
 //
 
 import SwiftUI
 
+// MARK: - MenuBarView
+
+/// The main content view shown in the menu-bar popover.
 struct MenuBarView: View {
+
+    /// Shared view-model providing display state and switch actions.
     @Bindable var viewModel: DisplayViewModel
+
+    /// User preference: when `true`, only HiDPI (Retina) modes are shown.
+    @AppStorage("showHiDPIOnly") private var showHiDPIOnly: Bool = false
+
+    // MARK: Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if viewModel.displays.isEmpty {
-                Text("No displays detected")
-                    .foregroundStyle(.secondary)
-                    .padding()
-            } else {
-                ForEach(Array(viewModel.displays.enumerated()), id: \.element.id) { index, display in
-                    if index > 0 {
-                        Divider().padding(.vertical, 4)
-                    }
-                    DisplaySectionView(
-                        display: display,
-                        isSwitching: viewModel.isSwitching
-                    ) { mode in
-                        viewModel.switchResolution(displayID: display.id, to: mode)
+            // ── Resolution list (scrollable when content exceeds screen) ──
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if viewModel.displays.isEmpty {
+                        Text("No displays detected")
+                            .foregroundStyle(.secondary)
+                            .padding()
+                    } else {
+                        ForEach(Array(viewModel.displays.enumerated()), id: \.element.id) { index, display in
+                            if index > 0 {
+                                Divider().padding(.vertical, 4)
+                            }
+                            DisplaySectionView(
+                                display: display,
+                                isSwitching: viewModel.isSwitching,
+                                showHiDPIOnly: showHiDPIOnly
+                            ) { mode in
+                                viewModel.switchResolution(displayID: display.id, to: mode)
+                            }
+                        }
                     }
                 }
             }
+            .frame(maxHeight: 500) // Prevent the menu from growing unbounded
 
             Divider().padding(.vertical, 4)
 
-            // Footer
+            // ── Footer: error + refresh ──
             HStack {
                 if let error = viewModel.lastError {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -55,10 +74,10 @@ struct MenuBarView: View {
 
             Divider()
 
-            // Settings & Quit
+            // ── Settings & Quit ──
             HStack {
                 SettingsLink {
-                    Text("Settings\u{2026}")
+                    Text("Preferences\u{2026}")
                 }
                 .buttonStyle(.borderless)
 
@@ -78,10 +97,28 @@ struct MenuBarView: View {
 
 // MARK: - Display Section
 
+/// Shows a single display's header and its list of resolution modes.
 struct DisplaySectionView: View {
+
+    /// The display whose modes are listed.
     let display: DisplayInfo
+
+    /// Whether a resolution switch is currently in progress (disables buttons).
     let isSwitching: Bool
+
+    /// When `true`, only modes with `scale >= 2` (HiDPI) are shown.
+    let showHiDPIOnly: Bool
+
+    /// Called when the user selects a mode.
     let onSelect: (DisplayMode) -> Void
+
+    /// Modes filtered according to the HiDPI preference.
+    private var filteredModes: [DisplayMode] {
+        if showHiDPIOnly {
+            return display.modes.filter { $0.scale >= 2 }
+        }
+        return display.modes
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -103,13 +140,21 @@ struct DisplaySectionView: View {
             .padding(.bottom, 4)
 
             // Modes
-            ForEach(display.modes) { mode in
-                ResolutionRowView(
-                    mode: mode,
-                    isCurrent: mode.id == display.currentMode?.id,
-                    disabled: isSwitching
-                ) {
-                    onSelect(mode)
+            if filteredModes.isEmpty {
+                Text("No matching modes")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(filteredModes) { mode in
+                    ResolutionRowView(
+                        mode: mode,
+                        isCurrent: mode.id == display.currentMode?.id,
+                        disabled: isSwitching
+                    ) {
+                        onSelect(mode)
+                    }
                 }
             }
         }
@@ -118,10 +163,19 @@ struct DisplaySectionView: View {
 
 // MARK: - Resolution Row
 
+/// A single clickable resolution row with checkmark indicator and HiDPI badge.
 struct ResolutionRowView: View {
+
+    /// The display mode this row represents.
     let mode: DisplayMode
+
+    /// Whether this mode is the currently active mode.
     let isCurrent: Bool
+
+    /// Whether interaction is disabled (e.g. during a switch).
     let disabled: Bool
+
+    /// Action invoked when the user clicks this row.
     let action: () -> Void
 
     var body: some View {
@@ -130,7 +184,7 @@ struct ResolutionRowView: View {
                 if isCurrent {
                     Image(systemName: "checkmark")
                         .font(.caption.bold())
-                        .foregroundStyle(.accent)
+                        .foregroundStyle(.tint)
                 } else {
                     Image(systemName: "checkmark")
                         .font(.caption.bold())

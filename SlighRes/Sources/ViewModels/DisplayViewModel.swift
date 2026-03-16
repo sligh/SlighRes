@@ -3,13 +3,20 @@
 //  SlighRes
 //
 //  Central view-model that publishes display state and
-//  orchestrates resolution switching with safety revert.
+//  orchestrates resolution switching with the safety-revert flow.
 //
 
 import Combine
 import Foundation
 import SwiftUI
 
+/// Observable view-model powering the menu-bar UI.
+///
+/// Responsibilities:
+/// - Maintains the list of connected displays and their modes.
+/// - Triggers resolution switches via `DisplayService`.
+/// - Coordinates the revert-safety countdown via `RevertSafetyManager`.
+/// - Refreshes automatically when displays are connected/disconnected.
 @Observable
 final class DisplayViewModel {
 
@@ -18,21 +25,25 @@ final class DisplayViewModel {
     /// All currently connected displays with their modes.
     var displays: [DisplayInfo] = []
 
-    /// True while a switch + confirmation is in progress.
+    /// `true` while a switch + confirmation is in progress; disables UI.
     var isSwitching: Bool = false
 
-    /// Last error message to surface in UI (auto-clears).
+    /// Last error message to surface in the UI (auto-clears on next switch).
     var lastError: String?
 
     // MARK: - Dependencies
 
-    private let displayService = DisplayService.shared
-    private let revertManager = RevertSafetyManager()
+    /// Shared low-level display service.
+    private let displayService: DisplayService = .shared
 
-    // MARK: - Init
+    /// Manages the 10-second revert-safety dialog.
+    private let revertManager: RevertSafetyManager = RevertSafetyManager()
+
+    // MARK: - Lifecycle
 
     init() {
         refresh()
+        // Re-query displays whenever macOS reports a configuration change.
         displayService.startMonitoring { [weak self] in
             self?.refresh()
         }
@@ -42,40 +53,46 @@ final class DisplayViewModel {
         displayService.stopMonitoring()
     }
 
-    // MARK: - Public
+    // MARK: - Public Methods
 
-    /// Refresh the display list from CoreGraphics.
+    /// Re-reads all connected displays and their modes from CoreGraphics.
     func refresh() {
         displays = displayService.allDisplays()
     }
 
-    /// Switch a display to the given mode, triggering the revert-safety flow.
+    /// Switches a display to the given mode, then runs the revert-safety flow.
+    ///
+    /// - Parameters:
+    ///   - displayID: The display to change.
+    ///   - mode: The target resolution mode.
     func switchResolution(displayID: CGDirectDisplayID, to mode: DisplayMode) {
+        // Prevent concurrent switches.
         guard !isSwitching else { return }
 
+        // Determine the current mode so we can revert if needed.
         guard let display = displays.first(where: { $0.id == displayID }),
-              let currentMode = display.currentMode else {
+              let currentMode: DisplayMode = display.currentMode else {
             lastError = "Could not determine current mode for display."
             return
         }
 
-        // Don't switch if already on this mode
+        // No-op if already on the requested mode.
         guard currentMode.id != mode.id else { return }
 
         isSwitching = true
-        lastError = nil
+        lastError   = nil
 
-        // Apply the new mode
+        // Apply the new mode immediately.
         do {
             try displayService.applyMode(mode, to: displayID)
         } catch {
-            lastError = error.localizedDescription
+            lastError   = error.localizedDescription
             isSwitching = false
             return
         }
 
-        // Run revert-safety on a short delay so the display has
-        // time to settle before the alert appears.
+        // After a short delay (to let the display settle), show the
+        // "Keep / Revert" safety dialog.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             self.revertManager.beginCountdown(
@@ -86,7 +103,8 @@ final class DisplayViewModel {
                 self.isSwitching = false
                 self.refresh()
                 if !kept {
-                    self.lastError = nil   // revert is not an error
+                    // Revert is intentional, not an error.
+                    self.lastError = nil
                 }
             }
         }
