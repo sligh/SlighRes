@@ -100,7 +100,7 @@ final class RevertSafetyManager {
 
     private func informativeText() -> String {
         "The display resolution has been changed. " +
-        "If you can\u2019t see this dialog, the previous resolution " +
+        "If you can\u{2019}t see this dialog, the previous resolution " +
         "will be restored automatically in \(remainingSeconds) seconds."
     }
 

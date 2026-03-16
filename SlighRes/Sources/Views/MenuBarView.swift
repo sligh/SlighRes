@@ -58,7 +58,7 @@ struct MenuBarView: View {
             // Settings & Quit
             HStack {
                 SettingsLink {
-                    Text("Settings\u2026")
+                    Text("Settings\u{2026}")
                 }
                 .buttonStyle(.borderless)
 
