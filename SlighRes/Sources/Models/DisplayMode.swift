@@ -74,7 +74,7 @@ extension DisplayMode {
     ///
     /// - Parameter cgMode: The CoreGraphics display mode to wrap.
     init?(cgMode: CGDisplayMode) {
-        guard cgMode.isUsableForDesktopGUI else { return nil }
+        guard cgMode.isUsableForDesktopGUI() else { return nil }
 
         let logicalWidth: Int = cgMode.width
         let pixelWidth: Int   = cgMode.pixelWidth
